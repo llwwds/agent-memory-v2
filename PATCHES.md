@@ -13,6 +13,7 @@
 | P1 | `AGENTS.md` | 上游原文件移至 `docs/upstream/AGENTS.md`，替换为本项目 Agent 操作契约 | 项目规范要求根部 AGENTS.md 为本项目的操作契约；上游版本留档供升级比对 | 项目叠层 commit |
 | P2 | `README.md` / `README_ZH.md` | 上游原文件移至 `docs/upstream/`，`README.md` 替换为本项目说明 | 本仓库是独立公开仓库，根 README 须描述本项目而非上游产品 | 项目叠层 commit |
 | P3 | `.gitignore` | 追加本项目忽略项（`.env` 已由上游覆盖，确认无遗漏后按需追加） | 防止密钥与本地状态入库 | 项目叠层 commit |
+| P4 | `.github/workflows/`（整目录移除） | 删除上游 12 个 CI/发布 workflow | 均为上游 MemTensor 的 release 流水线，引用上游 secrets 与 runner，在本 fork 中不可运行且无意义；`.github/` 其余（issue 模板、scripts）保留 | 移除上游 CI commit |
 
 ## M0 必修 bug（companmem 审计，2026-10-03 对 v2.0.34 逐一复现确认）
 

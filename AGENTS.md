@@ -1,155 +1,45 @@
-# AGENTS.md
+# AGENTS.md — agent-memory-v2 项目操作契约
 
-> Single source of truth for the project across AI runtimes. Claude Code, Codex, Cursor, Copilot, etc. all defer to this file.
-> Runtime-specific adaptation belongs in each runtime's own file (Claude reads `CLAUDE.md`); do not mix it in here.
+## 项目定位
 
-## Project Overview
+MemOS v2.0.34 基线上的二次开发项目：补齐云版「按类别抽取 + 按视图分发」管线能力。
+权威开发计划与设计正文在知识库
+`obsidian_file/02 项目/021 专业项目/0211 个人项目/agent_sql_memory/`（不在本仓库），
+本仓库只存与源码版本绑定的正式文档（`docs/`）。
 
-**MemOS / MemoryOS**: a memory operating system for LLM agents. Python library plus a FastAPI service, providing multiple memory types (textual / tree / preference / skill / KV cache / LoRA parametric) plus scheduling, version management, and vector & graph storage.
+## 关键目录与入口
 
-- **Repository**: https://github.com/MemTensor/MemOS
-- **Documentation**: https://memos-docs.openmem.net/home/overview/
-- **PyPI**: https://pypi.org/project/MemoryOS/
-- **License**: Apache-2.0
-- **Top-level package**: `src/memos/`. Distribution name `MemoryOS`; import name `memos`.
-- **CLI**: `memos` (entry `memos.cli:main`)
-- **API service**: `memos.api.start_api:app`
+- `src/memos/`：上游 MemOS 源码。自有管线代码集中放新模块；对上游文件的就地修改必须登记 `PATCHES.md`。
+- `src/memos/api/`：FastAPI 服务（`server_api.py` 入口 / `server_router.py` 路由 / `product_models.py` 响应契约 / `mcp_serve.py` MCP）。
+- `src/memos/memories/textual/tree_text_memory/retrieve/`：召回链路（searcher/recall）。
+- `docker/`：上游 compose 原件。实际部署副本在设备本地 `~/llwwds_application/docker_file/memos/`（不在同步区、不在本仓库）。
+- `docs/upstream/`：被替换的上游根文档存档。
 
-## Repository Layout
+## 硬性规则
 
-| Path | Purpose |
-|------|---------|
-| `src/memos/mem_os/` | `MOS` / `MOSCore` — top-level Memory OS entry |
-| `src/memos/mem_cube/` | `GeneralMemCube` — memory container aggregating multiple memory types |
-| `src/memos/memories/` | Memory implementations: `textual/`, `activation/`, `parametric/` |
-| `src/memos/mem_scheduler/` | Memory scheduler + monitors + ORM + task scheduling |
-| `src/memos/mem_user/` | User / multi-tenant management (MySQL / Redis backends) |
-| `src/memos/mem_chat/` `mem_reader/` `mem_agent/` `mem_feedback/` `multi_mem_cube/` | Chat sessions, ingest pipeline, agent integration, feedback channel, multi-cube routing |
-| `src/memos/llms/` `embedders/` `vec_dbs/` `graph_dbs/` `chunkers/` `parsers/` `reranker/` | Provider implementations (`base.py` + `factory.py` + each backend) |
-| `src/memos/api/` | FastAPI service (routers / handlers / middleware / MCP server) |
-| `src/memos/configs/` | All pydantic configuration classes (one-to-one with the modules above) |
-| `src/memos/context/` | Cross-thread context (trace_id / user / env) |
-| `tests/` | pytest cases, subdirectories mirror `src/memos/` |
-| `apps/` | Independent sub-projects, each with its own README; not part of the main Harness flow |
-| `extensions/` | Official plugin examples |
-| `docker/` `docs/` `evaluation/` `scripts/` | Deployment, documentation, evaluation, helper scripts |
-| `.claude/agents/`, `.codex/agents/` | Project-recommended AI sub-agent definitions |
+1. **基线纪律**：不重排、不格式化、不"顺手重构"上游代码；每个对上游文件的修改都要能独立回滚并在 `PATCHES.md` 有对应条目。
+2. **密钥红线**：API key / token 不进源码、文档、compose 提交文件、git；真实配置只存在于部署目录 `.env`（已 gitignore），仓库只留 `.env.example`。
+3. **位置契约**：运行时数据（数据卷、日志、构建缓存）只在设备本地 `llwwds_application/docker_file/memos/`；本仓库内不放 venv、缓存、日志、数据。
+4. **Git**：commit/push 需用户当次授权；版本号四段式（A.B.C.D）。新增文件前检查密钥与产物。
+5. **不改存储引擎**：开发只动管线两端（写入分类抽取、读出分类分发），Neo4j/Qdrant/PG 适配层保持上游原样，除非修 bug（登记 PATCHES.md）。
 
-## Command Cheatsheet
+## 常用命令
 
-- Install: `make install` (= `poetry install --extras all --with dev --with test` + pre-commit + push hook)
-- Start API: `make serve`
-- Export OpenAPI: `make openapi` (writes to `docs/openapi.json`)
-- Run full tests: `make test`
-- Run a single test: `poetry run pytest tests/<path>/test_xxx.py -q`
-- Lint + format: `make format`
-- Full pre-commit: `make pre_commit`
-- Build: `poetry build` (publishing is automated by `python-release.yml` on GitHub release)
+```bash
+# 语法/静态检查（本仓库无独立 lint 配置时用上游标准）
+python3 -m py_compile <改动文件>
 
-## Core API
+# 部署栈操作（在部署目录）
+cd ~/llwwds_application/docker_file/memos && docker compose up -d && docker compose ps
 
-### Python top-level entries (`from memos import ...`)
+# 服务冒烟
+curl -s localhost:8000/health || docker compose logs memos --tail 50
+```
 
-| Symbol | Purpose | Source |
-|--------|---------|--------|
-| `MOS` | Memory OS top-level entry (inherits `MOSCore`) | `memos.mem_os.main` |
-| `GeneralMemCube` | General memory container | `memos.mem_cube.general` |
-| `MOSConfig` / `GeneralMemCubeConfig` | Primary configs | `memos.configs.mem_os` / `memos.configs.mem_cube` |
-| `GeneralScheduler` / `SchedulerFactory` / `SchedulerConfigFactory` | Scheduler and factories | `memos.mem_scheduler.*` |
+上游测试用 pytest（`tests/`），跑之前先确认依赖安装方式（见 `docs/upstream/README.md` 或 pyproject.toml）。
 
-Common `MOS` methods: `MOS.simple()` (auto-configure from env), `register_mem_cube(cube)`, `add(...)`, `search(...)`, `chat(...)`, `create_user(...)` / `list_users()`.
+## 验证要求
 
-### API entry
-
-- ASGI app: `memos.api.start_api:app`
-- Routers: `src/memos/api/routers/` (`admin_router`, `product_router`, `server_router`)
-- OpenAPI contract: `docs/openapi.json` (must run `make openapi` after touching the API)
-
-## Import Patterns
-
-| Use | Import |
-|-----|--------|
-| Top-level entries | `from memos import MOS, GeneralMemCube, MOSConfig` |
-| Config classes | `from memos.configs.<submodule> import <Config>` |
-| Any provider factory | `from memos.<category>.factory import <Category>Factory` |
-| Logger | `from memos.log import get_logger`; `logger = get_logger(__name__)` |
-| Context (trace) | `from memos.context.context import get_current_trace_id, get_current_user_name` |
-| Exceptions | `from memos.exceptions import <semantic Exception>` |
-
-## Provider Matrix
-
-Every provider follows the same three-piece pattern: `base.py` abstract class + `factory.py` registry + `configs/<category>.py` config. The authoritative list of registered backends is the factory's `backend_to_class`; the snapshot below is provided for quick reference:
-
-| Category | Base class | Factory | Registered backends |
-|----------|-----------|---------|---------------------|
-| LLM | `BaseLLM` | `LLMFactory` | `openai` / `openai_new` / `azure` / `ollama` / `huggingface` / `huggingface_singleton` / `vllm` / `qwen` / `deepseek` |
-| Embedder | `BaseEmbedder` | `EmbedderFactory` | `ollama` / `sentence_transformer` / `ark` / `universal_api` |
-| Vector DB | `BaseVecDB` | `VecDBFactory` | `qdrant` / `milvus` |
-| Graph DB | `BaseGraphDB` | `GraphStoreFactory` | `neo4j` / `neo4j_community` / `nebular` / `polardb` / `postgres` |
-| Chunker | `BaseChunker` | `ChunkerFactory` | `sentence` / `markdown` / `simple` / `charactertext` |
-| Parser | `BaseParser` | `ParserFactory` | `markitdown` |
-| Reranker | `BaseReranker` | `RerankerFactory` | `cosine_local` / `http_bge` / `http_bge_strategy` / `concat` / `noop` |
-| Memory | `BaseMemory` (+ `BaseTextMemory` / `BaseActMemory` / `BaseParaMemory`) | `MemoryFactory` | `naive_text` / `general_text` / `tree_text` / `simple_tree_text` / `pref_text` / `simple_pref_text` / `kv_cache` / `vllm_kv_cache` / `lora` |
-| Scheduler | `BaseScheduler` | `SchedulerFactory` | `general` / `optimized` |
-
-## Adding a New Provider
-
-Mirror any existing provider in the same category:
-
-1. Implement `src/memos/<category>/<backend>.py`, inheriting the `base.py` abstract class and matching the signatures of existing providers.
-2. Add a pydantic config in `src/memos/configs/<category>.py` and register it in `<Category>ConfigFactory.backend_to_class`.
-3. Register the implementation in `<Category>Factory.backend_to_class` in `src/memos/<category>/factory.py`.
-4. Third-party dependencies **must** go into an optional extras group in `pyproject.toml` (`tree-mem` / `mem-scheduler` / `mem-user` / `mem-reader` / `pref-mem` / `skill-mem`) and be added to `all`; guard the import with try/except ImportError and raise a clear "install extras X" message on failure.
-5. Add tests under `tests/<category>/test_<backend>.py`; external HTTP / model loading must be mocked.
-
-## Behavior Boundaries
-
-### Always do
-
-- Write a failing test first (TDD), placed under `tests/<corresponding module>/test_*.py`.
-- Before claiming a task is done, run verification commands and paste the real output (at minimum `make format` plus the relevant pytest run).
-- Keep changes within the directories the current task authorizes; cross-module edits need to be called out and approved first.
-- Use `memos.log.get_logger(__name__)` for logging; route trace info through `memos.context.context` — do not `print`.
-- Optional third-party dependencies (neo4j / redis / pika / pymilvus / markitdown, etc.) must be guarded with try/except ImportError and declared in the matching extras group.
-- After touching `src/memos/api/`, run `make openapi` to refresh `docs/openapi.json`.
-
-### Ask first
-
-- Modifying `pyproject.toml` dependencies or the Python version constraint.
-- Touching public routes, request/response models, or the OpenAPI contract under `src/memos/api/`.
-- Changing DB schema, migrations, `mem_user` tables, or `graph_dbs` graph models.
-- Deleting files or doing wide-scope renames of public APIs (`memos.*` top-level symbols).
-- Editing `Makefile`, `.pre-commit-config.yaml`, `pyproject.toml [tool.*]`, or `.github/workflows/`.
-
-### Never do (IMPORTANT)
-
-- **Never** commit `.env`, `private/`, `.private-paths`, `tmp/`, `*.log`, secrets, tokens, or model credentials.
-- Do not log or include real API keys, raw user data, or vector contents in tests/fixtures.
-- Do not skip `pre-commit` or push with `--no-verify` (the `scripts/check-public-push.sh` pre-push hook is enforced).
-- Do not claim tests pass without real pytest output as evidence.
-- Do not add third-party dependencies to core `dependencies` — they must go into optional extras.
-- Do not run wide-scope `rm -rf` outside `src/`; do not `git push --force` or `git reset --hard origin/*`.
-
-## Code Style
-
-- Format and lint with Ruff (configured in `pyproject.toml [tool.ruff]`); `make format` must pass before commit.
-- Type annotations are required on public functions, API schemas, and config classes; implicit `Optional` is not allowed (enforced via pre-commit).
-- All configs and API schemas use Pydantic v2.
-- Logging: `logger.info("... %s", x)` form — do not pre-format with f-strings before passing to the logger.
-- Exceptions: library code raises semantic exceptions from `memos.exceptions`, never bare `Exception` / `RuntimeError`; the API layer translates them to HTTP errors in `memos.api.exceptions`.
-- File naming: source `snake_case.py`, tests `test_<module>.py`.
-
-## Change → Test Mapping
-
-- Edit `src/memos/<module>/`: at minimum run `pytest tests/<corresponding module>/ -q`; run `make test` once more before merging.
-- Edit `src/memos/api/`: run `tests/api/` and `make openapi` to confirm the OpenAPI spec did not change unexpectedly.
-- Edit `pyproject.toml` dependencies: `poetry lock --no-update`, then `make test`.
-- Edit `Makefile` / pre-commit / Ruff config: run `make pre_commit` locally over the whole tree.
-
-## Git Conventions
-
-- Commits: Conventional Commits (`feat:` / `fix:` / `chore:` / `refactor:` / `docs:`), subject line ≤ 72 chars.
-- Branches: `feat/<slug>` / `fix/<slug>` / `dev-YYYYMMDD-v<version>`.
-- `main` is protected — all changes go through PRs; never force-push to `main`; do not skip git hooks.
-- Do not commit paths listed in `.private-paths`.
-- The PR template lives at `.github/PULL_REQUEST_TEMPLATE.md` — its checklist must be fully ticked.
+- 每个修改点按风险做最小验证：改召回链路至少跑一次 `/product/search/memory` 基线；改写入链路至少跑一次 add→search 闭环。
+- 三个 M0 必修 bug（`_vector_recall` 断引用 / delete 不生效 / `/product` 无鉴权）修复时必须先复现、修后回归。
+- 里程碑推进同步知识库计划文档与 events.db（事件 `agent_sql_memory`）。

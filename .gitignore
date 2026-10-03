@@ -243,3 +243,13 @@ test_file_pipeline.py
 # spec
 .ai-tasks/
 openspecs/
+
+# --- agent-memory-v2 project additions ---
+# real deployment env / local state (never commit)
+*.local.env
+.env.*
+!.env.example
+.venv-*
+docker_file/
+*.db-shm
+*.db-wal

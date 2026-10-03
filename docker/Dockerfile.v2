@@ -1,0 +1,27 @@
+# agent-memory-v2 API image (P: own addition, not an upstream file)
+# Build context = repository root. Runtime mounts override /app/src for dev.
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    build-essential \
+    libffi-dev \
+    python3-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY docker/requirements.txt .
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY apps/api-mcp-bridge/ ./apps/api-mcp-bridge/
+
+ENV PYTHONPATH=/app/src
+
+EXPOSE 8000
+
+# Production-style entry; dev compose overrides with --reload + source mount.
+CMD ["uvicorn", "memos.api.server_api:app", "--host", "0.0.0.0", "--port", "8000"]

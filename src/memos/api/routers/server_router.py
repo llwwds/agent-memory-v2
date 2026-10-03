@@ -15,7 +15,7 @@ import os
 import random as _random
 import socket
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from memos.api import handlers
 from memos.api.handlers.add_handler import AddHandler
@@ -65,7 +65,18 @@ from memos.mem_scheduler.utils.status_tracker import TaskStatusTracker
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/product", tags=["Server API"])
+def _verify_api_key(x_api_key: str = Header(default="", alias="X-API-Key")) -> None:
+    """Enforce a shared API key on /product when MEMOS_API_KEY is configured.
+
+    Local-dev compatible: with MEMOS_API_KEY unset the router stays open (upstream
+    behaviour). Set the env in any deployment that binds beyond loopback.
+    """
+    expected = os.getenv("MEMOS_API_KEY", "").strip()
+    if expected and x_api_key != expected:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
+
+
+router = APIRouter(prefix="/product", tags=["Server API"], dependencies=[Depends(_verify_api_key)])
 
 # Instance ID for identifying this server instance in logs and responses
 INSTANCE_ID = f"{socket.gethostname()}:{os.getpid()}:{_random.randint(1000, 9999)}"

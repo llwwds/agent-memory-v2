@@ -11,6 +11,7 @@ from memos.configs.mem_reader import MultiModalStructMemReaderConfig
 from memos.context.context import ContextThreadPoolExecutor
 from memos.mem_reader.read_multi_modal import MultiModalParser, detect_lang
 from memos.mem_reader.read_multi_modal.base import _derive_key
+from memos.mem_reader.category_extract import framework_enabled, run_category_extraction
 from memos.mem_reader.read_pref_memory.process_preference_memory import process_preference_fine
 from memos.mem_reader.read_skill_memory.process_skill_memory import process_skill_memory_fine
 from memos.mem_reader.simple_struct import PROMPT_DICT, SimpleStructMemReader
@@ -953,6 +954,39 @@ class MultiModalStructMemReader(SimpleStructMemReader):
 
         return fine_memory_items
 
+    def _submit_category_extraction(
+        self,
+        executor: ContextThreadPoolExecutor,
+        fast_items: list[TextualMemoryItem],
+        info: dict[str, Any],
+        **kwargs,
+    ):
+        """Submit the v2 category framework future, or the upstream preference
+        pipeline when the framework is disabled (MEMOS_CATEGORY_EXTRACT=off).
+
+        allow_memory_view (request-level allow-list) rides in kwargs and is
+        forwarded as the framework's `categories` argument.
+        """
+        extract_llm = getattr(self, "preference_extractor_llm", self.general_llm)
+        if framework_enabled():
+            return executor.submit(
+                run_category_extraction,
+                fast_items,
+                info,
+                extract_llm,
+                self.embedder,
+                categories=kwargs.get("allow_memory_view"),
+                **kwargs,
+            )
+        return executor.submit(
+            process_preference_fine,
+            fast_items,
+            info,
+            extract_llm,
+            self.embedder,
+            **kwargs,
+        )
+
     @timed
     def _process_multi_modal_data(
         self, scene_data_info: MessagesType, info, mode: str = "fine", **kwargs
@@ -1039,13 +1073,8 @@ class MultiModalStructMemReader(SimpleStructMemReader):
                     is_upload_skill=is_upload_skill,
                     **kwargs,
                 )
-                future_pref = executor.submit(
-                    process_preference_fine,
-                    non_file_url_fast_items,
-                    info,
-                    getattr(self, "preference_extractor_llm", self.general_llm),
-                    self.embedder,
-                    **kwargs,
+                future_pref = self._submit_category_extraction(
+                    executor, non_file_url_fast_items, info, **kwargs
                 )
 
                 fine_memory_items_string_parser = future_string.result()
@@ -1130,14 +1159,9 @@ class MultiModalStructMemReader(SimpleStructMemReader):
                 is_upload_skill=is_upload_skill,
                 **kwargs,
             )
-            # Add preference memory extraction
-            future_pref = executor.submit(
-                process_preference_fine,
-                non_file_url_nodes,
-                info,
-                getattr(self, "preference_extractor_llm", self.general_llm),
-                self.embedder,
-                **kwargs,
+            # Add preference memory extraction (v2 category framework when enabled)
+            future_pref = self._submit_category_extraction(
+                executor, non_file_url_nodes, info, **kwargs
             )
 
             # Collect results

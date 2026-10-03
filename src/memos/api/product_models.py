@@ -488,6 +488,16 @@ class APISearchRequest(BaseRequest):
         ),
     )
 
+    # ==== v2 category views ====
+    include_memory_view: list[str] | None = Field(
+        None,
+        description=(
+            "Category views to include in the response detail lists (v2 category views). "
+            "Supported keys: detail_factual, preference (more in later milestones). "
+            "If None, all views are included."
+        ),
+    )
+
     # ==== Extended capabilities ====
     internet_search: bool = Field(
         False,
@@ -664,6 +674,16 @@ class APIADDRequest(BaseRequest):
         description=(
             "Custom tags for this add request, e.g. ['Travel', 'family']. "
             "These tags can be used as filters in search."
+        ),
+    )
+
+    # ==== v2 category views ====
+    allow_memory_view: list[str] | None = Field(
+        None,
+        description=(
+            "Category keys allowed for this add request (v2 category extraction). "
+            "Supported keys: detail_factual, preference (more in later milestones). "
+            "If None, all enabled categories are extracted."
         ),
     )
 

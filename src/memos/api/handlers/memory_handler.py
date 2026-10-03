@@ -14,6 +14,7 @@ from memos.api.product_models import (
     GetMemoryResponse,
     MemoryResponse,
 )
+from memos.api.v2_views import apply_memory_views
 from memos.log import get_logger
 from memos.mem_cube.navie import NaiveMemCube
 from memos.mem_os.utils.format_utils import (
@@ -310,6 +311,16 @@ def handle_get_memories(
         "tool_mem": results.get("tool_mem", []),
         "skill_mem": results.get("skill_mem", []),
     }
+
+    # v2 category views: derive cloud-shaped *_detail_list fields (legacy buckets kept)
+    included = []
+    if get_mem_req.include_preference:
+        included.append("preference")
+    if get_mem_req.include_tool_memory:
+        included.append("tool_memory")
+    if get_mem_req.include_skill_memory:
+        included.append("skill")
+    apply_memory_views(filtered_results, include_views=included or None)
 
     return GetMemoryResponse(message="Memories retrieved successfully", data=filtered_results)
 

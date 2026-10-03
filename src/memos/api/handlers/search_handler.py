@@ -15,6 +15,7 @@ from typing import Any
 from memos.api.handlers.base_handler import BaseHandler, HandlerDependencies
 from memos.api.handlers.formatters_handler import rerank_knowledge_mem
 from memos.api.product_models import APISearchRequest, SearchResponse
+from memos.api.v2_views import apply_memory_views
 from memos.dream.contextualization import CONTEXT_MEMORY_TYPE
 from memos.log import get_logger, summarize_search_request, summarize_search_results
 from memos.memories.textual.tree_text_memory.retrieve.retrieve_utils import (
@@ -145,6 +146,9 @@ class SearchHandler(BaseHandler):
             "[SearchHandler] Final search result summary: %s",
             summarize_search_results(results),
         )
+
+        # v2 category views: derive cloud-shaped *_detail_list fields (legacy buckets kept)
+        results = apply_memory_views(results, include_views=search_req_local.include_memory_view)
 
         return SearchResponse(
             message="Search completed successfully",

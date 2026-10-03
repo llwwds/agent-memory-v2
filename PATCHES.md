@@ -15,6 +15,12 @@
 | P3 | `.gitignore` | 追加本项目忽略项（`.env` 已由上游覆盖，确认无遗漏后按需追加） | 防止密钥与本地状态入库 | 项目叠层 commit |
 | P4 | `.github/workflows/`（整目录移除） | 删除上游 12 个 CI/发布 workflow | 均为上游 MemTensor 的 release 流水线，引用上游 secrets 与 runner，在本 fork 中不可运行且无意义；`.github/` 其余（issue 模板、scripts）保留 | `1701156` |
 | B3 | `src/memos/api/routers/server_router.py` | 新增 `_verify_api_key` 依赖并挂到 `/product` router：`MEMOS_API_KEY` 设置时强制校验 `X-API-Key` 头，未设置时保持上游开放行为 | companmem 审计 bug ③（2026-10-03 于 v2.0.34 运行时复现：任意 user_id 可读写他人记忆）；单机回环部署风险低，暴露端口前必须修 | 本 commit |
+| M1-1 | `src/memos/api/product_models.py` | `APIADDRequest` 新增 `allow_memory_view: list[str] \| None`；`APISearchRequest` 新增 `include_memory_view: list[str] \| None` | M1 视图开关契约（写路径按类别抽取、读路径按视图返回；None=全部），对齐云版按类别 key 的管线形状 | 本 commit |
+| M1-2 | `src/memos/mem_reader/multi_modal_struct.py` | 新增 `_submit_category_extraction` helper；`_process_multi_modal_data` 与 `_process_transfer_multi_modal_data` 中原 `process_preference_fine` future 改经该 helper 分发 | v2 类别抽取框架（`MEMOS_CATEGORY_EXTRACT` on 时走 `category_extract.runner`，off 时原样回落上游 pref 管线，避免双抽取）；为 M2–M4 类别接入统一入口 | 本 commit |
+| M1-3 | `src/memos/multi_mem_cube/single_cube.py` | `_process_text_mem` 的 `get_memory` 调用透传 `allow_memory_view`；async 路径 `_schedule_memory_tasks` 的 message info 携带 `allow_memory_view` | 请求级类别 allow-list 贯通 sync/async 两条写入链路 | 本 commit |
+| M1-4 | `src/memos/mem_scheduler/task_schedule_modules/handlers/mem_read_handler.py` | `_process_memories_with_reader` 从 info 弹出 `allow_memory_view` 并作为 kwarg 传入 `fine_transfer_simple_mem` | 异步 add 链路把请求级 allow-list 传到 reader 抽取层 | 本 commit |
+| M1-5 | `src/memos/api/handlers/search_handler.py` | `handle_search_memories` 返回前对 data 调 `apply_memory_views` | 读路径派生云版形状 `*_detail_list` 类别视图（M1：memory/preference，其余占位），既有分桶保留向后兼容 | 本 commit |
+| M1-6 | `src/memos/api/handlers/memory_handler.py` | `handle_get_memories` 返回前对 data 调 `apply_memory_views`（按请求 include_* 开关映射视图） | 同 M1-5，覆盖 get_memory 读路径 | 本 commit |
 
 ## 新增自有模块（非上游修改，不占 PATCH 条目，列出便于升级时识别）
 
@@ -24,6 +30,8 @@
 | `docker/Dockerfile.v2` | 本项目 API 镜像（上游 `docker/Dockerfile` 保留未动） |
 | `docker/.env.example-v2` | 本项目部署脱敏模板（上游 `.env.example*` 保留未动） |
 | `apps/api-mcp-bridge/` | stdio MCP → `/product` HTTP API 桥接（上游 `mcp_serve.py` 为进程内 MOS，绕开 API 管线，不满足 v2 需求） |
+| `src/memos/mem_reader/category_extract/` | v2 按类别抽取框架：registry（类别 key→视图字段）+ prompts + runner（M1 实现 preference，detail_factual 委托上游 string-fine；M2–M4 增 event/tool/skill） |
+| `src/memos/api/v2_views.py` | v2 读路径视图分发：桶结果 → 云版形状 `*_detail_list` |
 | `docs/upstream/` | 被替换的上游根文档存档 |
 
 ## M0 必修 bug 复现结论（companmem 审计清单 vs v2.0.34，2026-10-03）

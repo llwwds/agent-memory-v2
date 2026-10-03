@@ -71,7 +71,20 @@ def recall(query: str, user_id: str = "") -> str:
     """
     payload = {"query": query, "user_id": user_id or DEFAULT_USER_ID}
     result = _post("/product/search", payload)
-    return str(result.get("memory_detail_list") or result)
+    data = result.get("data") or {}
+    # v2 category views: prefer the cloud-shaped *_detail_list fields
+    views = {
+        field: data[field]
+        for field in (
+            "memory_detail_list",
+            "preference_detail_list",
+            "event_detail_list",
+            "tool_memory_detail_list",
+            "skill_detail_list",
+        )
+        if data.get(field)
+    }
+    return str(views or data.get("memory_detail_list") or result)
 
 
 def main() -> int:

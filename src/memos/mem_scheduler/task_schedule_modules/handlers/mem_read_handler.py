@@ -167,6 +167,7 @@ class MemReadMessageHandler(BaseSchedulerHandler):
 
             info = dict(info or {})
             is_upload_skill = info.pop("is_upload_skill", False)
+            allow_memory_view = info.pop("allow_memory_view", None)
 
             try:
                 processed_memories = mem_reader.fine_transfer_simple_mem(
@@ -177,6 +178,7 @@ class MemReadMessageHandler(BaseSchedulerHandler):
                     chat_history=chat_history,
                     user_context=user_context,
                     is_upload_skill=is_upload_skill,
+                    allow_memory_view=allow_memory_view,
                 )
             except Exception as e:
                 logger.warning("%s: Fail to transfer mem: %s", e, memory_items, exc_info=True)

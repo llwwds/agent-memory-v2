@@ -533,6 +533,7 @@ class SingleCubeView(MemCubeView):
                     info={
                         **(add_req.info or {}),
                         "is_upload_skill": getattr(add_req, "is_upload_skill", False),
+                        "allow_memory_view": getattr(add_req, "allow_memory_view", None),
                     },
                     chat_history=add_req.chat_history,
                     user_context=user_context,
@@ -714,6 +715,7 @@ class SingleCubeView(MemCubeView):
                 chat_history=add_req.chat_history,
                 user_context=user_context,
                 is_upload_skill=getattr(add_req, "is_upload_skill", False),
+                allow_memory_view=getattr(add_req, "allow_memory_view", None),
             )
         get_memory_ms = ts_gm.duration_ms
         flattened_local = [mm for m in memories_local for mm in m]

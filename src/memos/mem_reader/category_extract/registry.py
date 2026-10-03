@@ -38,7 +38,13 @@ CATEGORY_REGISTRY: dict[str, CategorySpec] = {
         memory_types=("PreferenceMemory",),
         env_flag="MEMOS_CAT_PREFERENCE",
     ),
-    # M2: event -> event_detail_list
+    "event": CategorySpec(
+        key="event",
+        view_field="event_detail_list",
+        # event nodes ride on LongTermMemory + metadata.memory_form="event"
+        memory_types=("LongTermMemory", "UserMemory"),
+        env_flag="MEMOS_CAT_EVENT",
+    ),
     # M3: tool_memory -> tool_memory_detail_list
     # M4: skill -> skill_detail_list
 }

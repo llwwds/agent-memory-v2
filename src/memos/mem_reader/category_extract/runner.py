@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from memos.context.context import ContextThreadPoolExecutor
 from memos.log import get_logger
-from memos.mem_reader.category_extract.prompts import PREFERENCE_PROMPTS
+from memos.mem_reader.category_extract.prompts import EVENT_PROMPTS, PREFERENCE_PROMPTS
 from memos.mem_reader.category_extract.registry import enabled_categories
 from memos.mem_reader.read_multi_modal import detect_lang
 from memos.mem_reader.utils import derive_key, parse_json_result
@@ -157,6 +157,132 @@ def _extract_preference_items(
 _EXTRACTORS = {
     "preference": _extract_preference_items,
 }
+
+
+def _build_event_node(
+    record: dict[str, Any],
+    fast_item: TextualMemoryItem,
+    info: dict[str, Any],
+    embedder: Any,
+    **kwargs,
+) -> TextualMemoryItem | None:
+    event_value = str(record.get("event_value") or "").strip()
+    if not event_value:
+        return None
+
+    def _opt_str(name: str) -> str | None:
+        value = record.get(name)
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    event_key = _opt_str("event_key") or derive_key(event_value)
+    event_time = _opt_str("event_time")
+    event_location = _opt_str("event_location")
+    event_roles = record.get("event_roles")
+    if not isinstance(event_roles, list):
+        event_roles = [str(r) for r in event_roles] if isinstance(event_roles, (str, tuple)) else []
+
+    info_ = info.copy() if isinstance(info, dict) else {}
+    info_.pop("user_id", None)
+    info_.pop("session_id", None)
+
+    user_context: UserContext | None = kwargs.get("user_context")
+    extra: dict[str, Any] = {}
+    if user_context:
+        if user_context.manager_user_id:
+            extra["manager_user_id"] = user_context.manager_user_id
+        if user_context.project_id:
+            extra["project_id"] = user_context.project_id
+
+    embedding = None
+    if embedder is not None:
+        try:
+            embedding = embedder.embed([event_value])[0]
+        except Exception as e:
+            logger.warning(f"[CategoryExtract] event embedding failed: {e}")
+
+    sources = getattr(fast_item.metadata, "sources", None)
+
+    return TextualMemoryItem(
+        memory=event_value,
+        metadata=TreeNodeTextualMemoryMetadata(
+            # event nodes ride on LongTermMemory; memory_form routes them to
+            # event_detail_list at the view layer
+            memory_type="LongTermMemory",
+            status="activated",
+            tags=["category:event"],
+            key=event_key,
+            embedding=embedding,
+            usage=[],
+            sources=sources,
+            background="",
+            confidence=0.99,
+            type="event",
+            info=info_,
+            # event contract fields (metadata is extra=allow)
+            memory_form="event",
+            event_key=event_key,
+            event_value=event_value,
+            event_time=event_time,
+            event_location=event_location,
+            event_roles=event_roles,
+            **extra,
+        ),
+    )
+
+
+def _extract_event_items(
+    fast_items: list[TextualMemoryItem],
+    info: dict[str, Any],
+    llm: Any,
+    embedder: Any,
+    **kwargs,
+) -> list[TextualMemoryItem]:
+    """One LLM call per window; returns event nodes for the whole request."""
+    nodes: list[TextualMemoryItem] = []
+    seen_events: set[str] = set()
+
+    for fast_item in fast_items:
+        mem_str = (fast_item.memory or "").strip()
+        if not mem_str:
+            continue
+
+        lang = detect_lang(mem_str)
+        prompt = EVENT_PROMPTS[lang].replace("${conversation}", mem_str)
+        try:
+            raw = llm.generate([{"role": "user", "content": prompt}])
+        except Exception as e:
+            logger.error(f"[CategoryExtract] event LLM call failed: {e}")
+            continue
+        if not raw:
+            continue
+
+        parsed = parse_json_result(raw)
+        records = parsed.get("event list", []) if isinstance(parsed, dict) else []
+        if not isinstance(records, list):
+            continue
+
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            node = _build_event_node(record, fast_item, info, embedder, **kwargs)
+            if node is None:
+                continue
+            dedupe_key = f"{node.metadata.event_key}|{node.metadata.event_value}".lower()
+            if dedupe_key in seen_events:
+                # windows overlap by design; keep the first occurrence
+                continue
+            seen_events.add(dedupe_key)
+            nodes.append(node)
+
+    if nodes:
+        logger.info(f"[CategoryExtract] event extracted {len(nodes)} nodes")
+    return nodes
+
+
+_EXTRACTORS["event"] = _extract_event_items
 
 
 def run_category_extraction(

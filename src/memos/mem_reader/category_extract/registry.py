@@ -45,8 +45,20 @@ CATEGORY_REGISTRY: dict[str, CategorySpec] = {
         memory_types=("LongTermMemory", "UserMemory"),
         env_flag="MEMOS_CAT_EVENT",
     ),
-    # M3: tool_memory -> tool_memory_detail_list
-    # M4: skill -> skill_detail_list
+    "tool_memory": CategorySpec(
+        key="tool_memory",
+        view_field="tool_memory_detail_list",
+        memory_types=("ToolSchemaMemory", "ToolTrajectoryMemory"),
+        # delegated to the upstream tool-trajectory/schema extractors
+        has_extractor=False,
+    ),
+    "skill": CategorySpec(
+        key="skill",
+        view_field="skill_detail_list",
+        memory_types=("SkillMemory",),
+        # delegated to the upstream skill extractor (fires at >=5 tool rounds)
+        has_extractor=False,
+    ),
 }
 
 

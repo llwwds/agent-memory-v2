@@ -13,6 +13,8 @@ plus per-category fields aligned with the v2 development plan:
 - skill_detail_list:       skill_value / skill_url / skill_type (M4)
 """
 
+import json
+
 from typing import Any
 
 from memos.log import get_logger
@@ -84,14 +86,35 @@ def _preference_detail(mem: dict[str, Any], meta: dict[str, Any]) -> dict[str, A
     return detail
 
 
+def _normalize_tool_used_status(raw: Any) -> list[dict[str, Any]]:
+    """Normalize tool_used_status to a list of objects.
+
+    Upstream LLM output occasionally double-encodes entries as JSON strings;
+    parse them so the view always exposes the contract object shape.
+    """
+    normalized: list[dict[str, Any]] = []
+    for entry in raw if isinstance(raw, list) else []:
+        if isinstance(entry, str):
+            try:
+                entry = json.loads(entry)
+            except (ValueError, TypeError):
+                entry = {"tool_experience": entry} if entry.strip() else None
+        if isinstance(entry, dict):
+            normalized.append(entry)
+        elif isinstance(entry, str) and entry.strip():
+            normalized.append({"tool_experience": entry})
+    return normalized
+
+
 def _tool_memory_detail(mem: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
     detail = _common_fields(mem, meta)
     detail.update(
         {
             "tool_type": meta.get("memory_type"),
             "tool_value": meta.get("tool_value") or mem.get("memory"),
-            "tool_used_status": meta.get("tool_used_status") or [],
+            "tool_used_status": _normalize_tool_used_status(meta.get("tool_used_status")),
             "experience": meta.get("experience"),
+            "correctness": meta.get("correctness"),
             "create_time": meta.get("created_at"),
             "update_time": meta.get("updated_at"),
         }
@@ -101,11 +124,18 @@ def _tool_memory_detail(mem: dict[str, Any], meta: dict[str, Any]) -> dict[str, 
 
 def _skill_detail(mem: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
     detail = _common_fields(mem, meta)
+    # upstream SkillMemory nodes carry name/description/procedure/experience/
+    # preference/examples on metadata; assemble the cloud-shaped skill_value object
+    skill_value_obj = {
+        key: meta.get(key)
+        for key in ("name", "description", "procedure", "experience", "preference", "examples")
+        if meta.get(key)
+    }
     detail.update(
         {
-            "skill_value": meta.get("skill_value") or mem.get("memory"),
-            "skill_url": meta.get("skill_url"),
-            "skill_type": meta.get("skill_type"),
+            "skill_value": meta.get("skill_value") or (skill_value_obj or mem.get("memory")),
+            "skill_url": meta.get("skill_url") or meta.get("url"),
+            "skill_type": meta.get("skill_type") or "procedural",
             "create_time": meta.get("created_at"),
             "update_time": meta.get("updated_at"),
         }

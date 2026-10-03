@@ -260,7 +260,36 @@ class SystemParser(BaseMessageParser):
         # We do NOT store the compressed system message content as LongTermMemory
         # Only the tool schema itself is extracted and stored via parse_fine
         # Return empty list to defer to parse_fine for actual storage
-        return []
+
+        # v2 (agent-memory-v2 M3): returning [] here left the system source
+        # (which carries tool_schema) out of every fast item, so process_transfer
+        # never reached parse_fine and ToolSchemaMemory was unreachable through
+        # the add pipeline. Emit a placeholder fast item whose window carries the
+        # system source; the placeholder text keeps the <tool_schema> marker so
+        # the trajectory extractor still recognises the window.
+        source = self.create_source(message, info)
+        info_ = info.copy() if isinstance(info, dict) else {}
+        user_id = info_.pop("user_id", "")
+        session_id = info_.pop("session_id", "")
+        return [
+            TextualMemoryItem(
+                memory=content,
+                metadata=TreeNodeTextualMemoryMetadata(
+                    user_id=user_id,
+                    session_id=session_id,
+                    memory_type="LongTermMemory",  # placeholder; windows re-type by roles
+                    status="activated",
+                    tags=["mode:fast", "multimodal:tool_schema"],
+                    embedding=None,
+                    usage=[],
+                    sources=[source],
+                    background="",
+                    confidence=0.99,
+                    type="fact",
+                    info=info_,
+                ),
+            )
+        ]
 
     def parse_fine(
         self,

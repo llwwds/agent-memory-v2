@@ -21,6 +21,7 @@
 | M1-4 | `src/memos/mem_scheduler/task_schedule_modules/handlers/mem_read_handler.py` | `_process_memories_with_reader` 从 info 弹出 `allow_memory_view` 并作为 kwarg 传入 `fine_transfer_simple_mem` | 异步 add 链路把请求级 allow-list 传到 reader 抽取层 | 本 commit |
 | M1-5 | `src/memos/api/handlers/search_handler.py` | `handle_search_memories` 返回前对 data 调 `apply_memory_views` | 读路径派生云版形状 `*_detail_list` 类别视图（M1：memory/preference，其余占位），既有分桶保留向后兼容 | 本 commit |
 | M1-6 | `src/memos/api/handlers/memory_handler.py` | `handle_get_memories` 返回前对 data 调 `apply_memory_views`（按请求 include_* 开关映射视图） | 同 M1-5，覆盖 get_memory 读路径 | 本 commit |
+| M3-1 | `src/memos/mem_reader/read_multi_modal/system_parser.py` | `SystemParser.parse_fast`：system 消息含可解析 `<tool_schema>` 时不再返回空列表，改为产出一个携带 system source（含 tool_schema 原文）的 fast 占位节点（memory=压缩后的 `<tool_schema>` 标记文本） | 上游接缝缺陷：system 消息在 fast 阶段恒返空且不产生 source，导致 Part B `process_transfer` 永远到不了 `parse_fine`，add 管线中 ToolSchemaMemory 是不可达死代码（实测复现）；占位节点使窗口携带 system source 走既有 parse_fine 通路，schema 节点随 fast 节点生命周期被清理替换 | 本 commit |
 
 ## 新增自有模块（非上游修改，不占 PATCH 条目，列出便于升级时识别）
 
@@ -30,8 +31,9 @@
 | `docker/Dockerfile.v2` | 本项目 API 镜像（上游 `docker/Dockerfile` 保留未动） |
 | `docker/.env.example-v2` | 本项目部署脱敏模板（上游 `.env.example*` 保留未动） |
 | `apps/api-mcp-bridge/` | stdio MCP → `/product` HTTP API 桥接（上游 `mcp_serve.py` 为进程内 MOS，绕开 API 管线，不满足 v2 需求） |
-| `src/memos/mem_reader/category_extract/` | v2 按类别抽取框架：registry（类别 key→视图字段）+ prompts + runner（M1 实现 preference，detail_factual 委托上游 string-fine；M2–M4 增 event/tool/skill） |
+| `src/memos/mem_reader/category_extract/` | v2 按类别抽取框架：registry（类别 key→视图字段）+ prompts + runner（M1 preference、M2 event 为框架抽取器；detail_factual/tool_memory/skill 为委托登记，抽取仍由上游对应提取器承担） |
 | `src/memos/api/v2_views.py` | v2 读路径视图分发：桶结果 → 云版形状 `*_detail_list` |
+| `scripts/migrate_v1_to_v2.py` | v1 记忆库（events/persona/pitfalls）经 /product/add API 批量灌入 v2 的一次性运维脚本（只调 API、只读 v1 库，info.source=v1-migration 标记来源） |
 | `docs/upstream/` | 被替换的上游根文档存档 |
 
 ## M0 必修 bug 复现结论（companmem 审计清单 vs v2.0.34，2026-10-03）

@@ -166,13 +166,43 @@ def _looks_like_fallback(data: list[dict[str, Any]]) -> bool:
     )
 
 
+def _delete_memories(
+    api_base: str, api_key: str | None, user_id: str, memory_ids: list[str | None]
+) -> None:
+    ids = [mid for mid in memory_ids if mid]
+    if not ids:
+        return
+    body = json.dumps({"writable_cube_ids": [user_id], "memory_ids": ids}).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["X-API-Key"] = api_key
+    req = request.Request(
+        f"{api_base.rstrip('/')}/product/delete_memory", data=body, headers=headers, method="POST"
+    )
+    try:
+        with request.urlopen(req, timeout=120):
+            print(f"[migrate] cleaned {len(ids)} fallback node(s)")
+    except Exception as e:
+        print(f"[migrate] fallback cleanup failed ({len(ids)} nodes): {e}")
+
+
 def _post_add_with_retry(
-    api_base: str, api_key: str | None, payload: dict[str, Any], label: str
+    api_base: str,
+    api_key: str | None,
+    payload: dict[str, Any],
+    label: str,
+    user_id: str = "llwwds",
 ) -> dict[str, Any] | None:
     for attempt in range(1, RETRY_MAX + 1):
         try:
             result = _post_add(api_base, api_key, payload)
-            if _looks_like_fallback(result.get("data") or []):
+            data = result.get("data") or []
+            if _looks_like_fallback(data):
+                # the failed extraction already wrote raw fallback nodes; remove
+                # them so retries do not accumulate garbage
+                _delete_memories(
+                    api_base, api_key, user_id, [m.get("memory_id") for m in data]
+                )
                 print(f"[migrate] {label}: fallback raw-node output (LLM failure), retrying")
             else:
                 return result
@@ -218,7 +248,7 @@ def _migrate_source(
             "messages": [{"role": "user", "content": item["text"]} for item in batch],
         }
         _wait_for_cpu_headroom(args.cpu_gate_idle, args.cpu_gate_max_wait)
-        result = _post_add_with_retry(args.api_base, api_key, payload, label)
+        result = _post_add_with_retry(args.api_base, api_key, payload, label, args.user_id)
         source_report["batches"] += 1
         if result is None:
             source_report["failed_batches"] += 1

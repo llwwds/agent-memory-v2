@@ -35,6 +35,30 @@ RETRY_MAX = 5
 RETRY_BACKOFF_SECONDS = 60
 
 
+def _cpu_idle_percent() -> float | None:
+    """Best-effort host CPU idle probe (macOS top); None when unavailable."""
+    import re as _re
+    import subprocess as _sp
+
+    try:
+        out = _sp.run(["top", "-l", "1", "-n", "0"], capture_output=True, text=True, timeout=15)
+        m = _re.search(r"CPU usage: .*?([\d.]+)% idle", out.stdout)
+        return float(m.group(1)) if m else None
+    except Exception:
+        return None
+
+
+def _wait_for_cpu_headroom(threshold: float, max_wait_seconds: float) -> None:
+    """Block until host CPU idle >= threshold (skipped when probe unavailable)."""
+    deadline = time.time() + max_wait_seconds
+    while time.time() < deadline:
+        idle = _cpu_idle_percent()
+        if idle is None or idle >= threshold:
+            return
+        print(f"[migrate] cpu gate: idle={idle}% < {threshold}%, waiting")
+        time.sleep(30)
+
+
 def _connect(db_dir: str, name: str) -> sqlite3.Connection:
     path = os.path.join(db_dir, name)
     if not os.path.exists(path):
@@ -86,15 +110,17 @@ def _load_pitfalls(db_dir: str) -> list[dict[str, Any]]:
 def _load_events(db_dir: str) -> list[dict[str, Any]]:
     db = _connect(db_dir, "events.db")
     try:
+        # v1 events use lifecycle statuses ('进行中'/'已完成'/'已废弃'), not the
+        # memory-level '存在'; migrate everything except explicit non-existence.
         rows = db.execute(
             "SELECT id, name, overview, milestones, status, updated_at FROM events "
-            "WHERE status='存在' ORDER BY id"
+            "WHERE status != '不存在' ORDER BY id"
         ).fetchall()
     finally:
         db.close()
     items = []
     for r in rows:
-        eid, name, overview, milestones, _status, updated_at = r
+        eid, name, overview, milestones, status, updated_at = r
         milestone_titles: list[str] = []
         if milestones:
             try:
@@ -109,7 +135,7 @@ def _load_events(db_dir: str) -> list[dict[str, Any]]:
                             milestone_titles.append(title[:120])
             except (ValueError, TypeError):
                 pass
-        text = f"[v1-event #{eid}] {name}（更新于 {updated_at}）：{overview or ''}"
+        text = f"[v1-event #{eid}] {name}（状态: {status}，更新于 {updated_at}）：{overview or ''}"
         if milestone_titles:
             text += " 近期节点: " + "；".join(milestone_titles)
         items.append({"id": eid, "text": text, "meta": {"v1_source": "events", "v1_id": eid}})
@@ -128,12 +154,28 @@ def _post_add(api_base: str, api_key: str | None, payload: dict[str, Any]) -> di
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _looks_like_fallback(data: list[dict[str, Any]]) -> bool:
+    """Detect the upstream LLM-failure fallback shape (raw window as UserMemory).
+
+    When the extraction LLM call fails (e.g. gateway overload), upstream stores
+    the raw window text prefixed with "user: [timestamp]:" instead of an
+    extracted fact. Such results are garbage for migration purposes.
+    """
+    return any(
+        str(m.get("memory", "")).lstrip().startswith("user: [") for m in data if isinstance(m, dict)
+    )
+
+
 def _post_add_with_retry(
     api_base: str, api_key: str | None, payload: dict[str, Any], label: str
 ) -> dict[str, Any] | None:
     for attempt in range(1, RETRY_MAX + 1):
         try:
-            return _post_add(api_base, api_key, payload)
+            result = _post_add(api_base, api_key, payload)
+            if _looks_like_fallback(result.get("data") or []):
+                print(f"[migrate] {label}: fallback raw-node output (LLM failure), retrying")
+            else:
+                return result
         except error.HTTPError as e:
             body = e.read().decode("utf-8", "replace")[:200]
             print(f"[migrate] {label}: HTTP {e.code} (attempt {attempt}/{RETRY_MAX}): {body}")
@@ -169,9 +211,13 @@ def _migrate_source(
         payload: dict[str, Any] = {
             "user_id": args.user_id,
             "async_mode": "sync",
+            # migration records are already-structured facts; skip the other
+            # category extractors to keep the per-batch LLM burst minimal
+            "allow_memory_view": ["detail_factual"],
             "info": {"source": "v1-migration", **batch[0]["meta"]},
             "messages": [{"role": "user", "content": item["text"]} for item in batch],
         }
+        _wait_for_cpu_headroom(args.cpu_gate_idle, args.cpu_gate_max_wait)
         result = _post_add_with_retry(args.api_base, api_key, payload, label)
         source_report["batches"] += 1
         if result is None:
@@ -195,6 +241,14 @@ def main() -> int:
     )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--report", default=None, help="optional path for the JSON report")
+    parser.add_argument(
+        "--cpu-gate-idle", type=float, default=25.0,
+        help="wait before each batch until host CPU idle >= this percent (0 disables)",
+    )
+    parser.add_argument(
+        "--cpu-gate-max-wait", type=float, default=900.0,
+        help="max seconds to wait at the CPU gate per batch",
+    )
     parser.add_argument(
         "--sources", default="persona,pitfalls,events", help="comma-separated sources to migrate"
     )

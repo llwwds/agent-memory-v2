@@ -22,6 +22,7 @@
 | M1-5 | `src/memos/api/handlers/search_handler.py` | `handle_search_memories` 返回前对 data 调 `apply_memory_views` | 读路径派生云版形状 `*_detail_list` 类别视图（M1：memory/preference，其余占位），既有分桶保留向后兼容 | 本 commit |
 | M1-6 | `src/memos/api/handlers/memory_handler.py` | `handle_get_memories` 返回前对 data 调 `apply_memory_views`（按请求 include_* 开关映射视图） | 同 M1-5，覆盖 get_memory 读路径 | 本 commit |
 | M3-1 | `src/memos/mem_reader/read_multi_modal/system_parser.py` | `SystemParser.parse_fast`：system 消息含可解析 `<tool_schema>` 时不再返回空列表，改为产出一个携带 system source（含 tool_schema 原文）的 fast 占位节点（memory=压缩后的 `<tool_schema>` 标记文本） | 上游接缝缺陷：system 消息在 fast 阶段恒返空且不产生 source，导致 Part B `process_transfer` 永远到不了 `parse_fine`，add 管线中 ToolSchemaMemory 是不可达死代码（实测复现）；占位节点使窗口携带 system source 走既有 parse_fine 通路，schema 节点随 fast 节点生命周期被清理替换 | 本 commit |
+| M5-1 | `src/memos/memories/textual/item.py` | `TextualMemoryMetadata` 新增 `info`/`internal_info` 的 before-validator：字符串形式的 JSON 对象容错反序列化 | 上游序列化回路 bug（v1 数据灌入时实测复现）：neo4j 节点属性不能存嵌套 dict，写入时 `internal_info` 被 stringify，读回时 pydantic dict 校验失败并**拖垮命中该节点的整次 search**（_search_text 整体异常返回空）；仅当节点经窗口合并（携带 ingest_batch_id）时出现，直灌迁移的超长记录 tools#151 触发 | 本 commit |
 
 ## 新增自有模块（非上游修改，不占 PATCH 条目，列出便于升级时识别）
 
@@ -33,7 +34,7 @@
 | `apps/api-mcp-bridge/` | stdio MCP → `/product` HTTP API 桥接（上游 `mcp_serve.py` 为进程内 MOS，绕开 API 管线，不满足 v2 需求） |
 | `src/memos/mem_reader/category_extract/` | v2 按类别抽取框架：registry（类别 key→视图字段）+ prompts + runner（M1 preference、M2 event 为框架抽取器；detail_factual/tool_memory/skill 为委托登记，抽取仍由上游对应提取器承担） |
 | `src/memos/api/v2_views.py` | v2 读路径视图分发：桶结果 → 云版形状 `*_detail_list` |
-| `scripts/migrate_v1_to_v2.py` | v1 记忆库（events/persona/pitfalls）经 /product/add API 批量灌入 v2 的一次性运维脚本（只调 API、只读 v1 库，info.source=v1-migration 标记来源） |
+| `scripts/pour_v1_snapshot.py` | v1 冻结快照 → v2 直灌脚本（sync+fast 原生通道，零 LLM、1 记录 1 add、v1_source/v1_id 落节点属性、echo 校验、skip-ids 幂等重跑）；取代早期的 LLM 抽取式 `migrate_v1_to_v2.py`（已删除，见 git 历史） |
 | `docs/upstream/` | 被替换的上游根文档存档 |
 
 ## M0 必修 bug 复现结论（companmem 审计清单 vs v2.0.34，2026-10-03）

@@ -161,6 +161,25 @@ class TextualMemoryMetadata(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
+    @field_validator("info", "internal_info", mode="before")
+    @classmethod
+    def _coerce_json_string_dict_fields(cls, v: Any) -> Any:
+        """Tolerate graph-store round-trips that stringify dict metadata.
+
+        Neo4j node properties cannot hold nested dicts, so the save path
+        serializes `internal_info` (and potentially `info`) to a JSON string;
+        without this coercion any read of such a node fails pydantic dict
+        validation and aborts the whole search that retrieved it.
+        """
+        if isinstance(v, str):
+            s = v.strip()
+            if s.startswith("{") and s.endswith("}"):
+                try:
+                    return json.loads(s)
+                except ValueError:
+                    return v
+        return v
+
     covered_history: Any | None = Field(
         default=None,
         description="Record the memory id covered by the update",

@@ -1,4 +1,4 @@
-"""MemOS API MCP bridge (agent-memory-v2 own module, not an upstream file).
+"""MemOS API MCP bridge (agent-memory-v3 own module, not an upstream file).
 
 Stdio MCP server that forwards tool calls to the local MemOS `/product` HTTP API.
 

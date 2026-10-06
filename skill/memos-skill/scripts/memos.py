@@ -1,4 +1,4 @@
-"""MemOS memory skill CLI (agent-memory-v2 companion skill).
+"""MemOS memory skill CLI (agent-memory-v3 companion skill).
 
 Zero-dependency (urllib only) command line access to the local MemOS /product
 API for agents: view-routed search, memory writing, pitfall recall, stats and

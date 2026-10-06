@@ -1,4 +1,4 @@
-# AGENTS.md — agent-memory-v2 项目操作契约
+# AGENTS.md — agent-memory-v3 项目操作契约
 
 ## 项目定位
 

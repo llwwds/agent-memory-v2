@@ -1,6 +1,6 @@
 # api-mcp-bridge
 
-agent-memory-v2 自有模块：把 MemOS `/product` HTTP API 桥接成 stdio MCP，供 Codex 等编码 agent 接入。
+agent-memory-v3 自有模块：把 MemOS `/product` HTTP API 桥接成 stdio MCP，供 Codex 等编码 agent 接入。
 
 与上游 `memos.api.mcp_serve` 的区别：上游 MCP 在进程内实例化完整 MOS、绕开 FastAPI 管线；
 本桥接只做 HTTP 转发，保证 MCP 路径与 v2 开发的「分类抽取 + 视图分发」管线同路。

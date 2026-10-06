@@ -1,6 +1,6 @@
 name: memos-skill
 description: >-
-  通过本地 MemOS API（agent-memory-v2）读写 agent 长期记忆：按视图检索
+  通过本地 MemOS API（agent-memory-v3）读写 agent 长期记忆：按视图检索
   （事实/偏好/事件/工具记忆/技能）、写入记忆、召回踩坑记录、统计与健康检查。
   当 agent 需要 remember/recall 跨会话记忆、动手前查相关踩坑、查询用户偏好与
   项目背景、或维护 MemOS 记忆库时使用。后端为本地部署的 MemOS 服务

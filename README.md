@@ -1,4 +1,4 @@
-# agent-memory-v2
+# agent-memory-v3
 
 基于 [MemOS](https://github.com/MemTensor/MemOS)（Apache-2.0）二次开发的 agent 长期记忆系统 v2，
 目标是补齐 MemOS 云端版独有的「**按类别抽取 + 按视图分发**」管线能力（不改存储引擎），
